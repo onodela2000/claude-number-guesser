@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4桁スコア対応数当てゲーム</title>
+    <style>
+        /* 前回のCSSをそのまま使用 */
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f4f8;
+            color: #333;
+            overflow: hidden;
+        }
+        #game-container {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 90%;
+            max-width: 400px;
+            z-index: 10;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+        input, button {
+            width: 100%;
+            padding: 15px;
+            margin: 1rem 0;
+            border: 2px solid #3498db;
+            border-radius: 10px;
+            font-size: 1.2rem;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover, button:active {
+            background-color: #2980b9;
+        }
+        #result, #score {
+            margin-top: 1rem;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+        #result {
+            color: #27ae60;
+        }
+        #score {
+            color: #3498db;
+        }
+        #timer-bar {
+            width: 100%;
+            height: 15px;
+            background-color: #ecf0f1;
+            margin-bottom: 1rem;
+            border-radius: 7.5px;
+            overflow: hidden;
+        }
+        #timer-progress {
+            width: 100%;
+            height: 100%;
+            background-color: #2ecc71;
+            transition: width 1s linear;
+        }
+        .hidden {
+            display: none;
+        }
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #f0f;
+            pointer-events: none;
+        }
+        #bgm-control {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background-color: rgba(52, 152, 219, 0.7);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 20px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #bgm-control:hover {
+            background-color: rgba(41, 128, 185, 0.7);
+        }
+        @media (max-width: 480px) {
+            #game-container {
+                padding: 1rem;
+            }
+            h1 {
+                font-size: 1.3rem;
+            }
+            input, button {
+                font-size: 1rem;
+                padding: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <h1>数当てゲーム</h1>
+        <div id="start-screen">
+            <p>1から100までの数字を当ててください。</p>
+            <button id="start-button">ゲームスタート</button>
+        </div>
+        <div id="game-screen" class="hidden">
+            <div id="timer-bar"><div id="timer-progress"></div></div>
+            <input type="number" id="guess-input" min="1" max="100">
+            <button id="guess-button">予想する</button>
+        </div>
+        <p id="result"></p>
+        <p id="score"></p>
+    </div>
+    <button id="bgm-control">♫</button>
+
+    <script>
+        let targetNumber;
+        let attempts;
+        let startTime;
+        let timerInterval;
+        const maxTime = 60; // 制限時間（秒）
+
+        const correctSound = new Audio('https://cdnjs.cloudflare.com/ajax/libs/sound-effects/21021/7_LevelUp.mp3');
+        const wrongSound = new Audio('https://cdnjs.cloudflare.com/ajax/libs/sound-effects/21021/4_Error.mp3');
+        const clickSound = new Audio('https://cdnjs.cloudflare.com/ajax/libs/sound-effects/21021/7_Select.mp3');
+        
+        const gameBGM = new Audio('https://cdnjs.cloudflare.com/ajax/libs/free-games-assets/2015/11/22/happy_adveture_preview_loop.ogg');
+        gameBGM.loop = true;
+        
+        const clearBGM = new Audio('https://cdnjs.cloudflare.com/ajax/libs/free-games-assets/2015/11/22/clear_sound.ogg');
+
+        const startButton = document.getElementById('start-button');
+        const startScreen = document.getElementById('start-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const guessButton = document.getElementById('guess-button');
+        const guessInput = document.getElementById('guess-input');
+        const resultElement = document.getElementById('result');
+        const scoreElement = document.getElementById('score');
+        const bgmControl = document.getElementById('bgm-control');
+
+        startButton.addEventListener('click', startGame);
+        guessButton.addEventListener('click', checkGuess);
+        bgmControl.addEventListener('click', toggleBGM);
+
+        let isBGMPlaying = false;
+
+        function toggleBGM() {
+            if (isBGMPlaying) {
+                gameBGM.pause();
+                bgmControl.textContent = '♫';
+            } else {
+                gameBGM.play();
+                bgmControl.textContent = '⏸';
+            }
+            isBGMPlaying = !isBGMPlaying;
+        }
+
+        function startGame() {
+            clickSound.play();
+            if (!isBGMPlaying) {
+                toggleBGM();
+            }
+            targetNumber = Math.floor(Math.random() * 100) + 1;
+            attempts = 0;
+            startTime = new Date();
+            updateTimer();
+            timerInterval = setInterval(updateTimer, 1000);
+
+            startScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+            resultElement.textContent = '';
+            scoreElement.textContent = '';
+            guessInput.value = '';
+            guessInput.focus();
+        }
+
+        function updateTimer() {
+            const currentTime = new Date();
+            const elapsedTime = (currentTime - startTime) / 1000;
+            const remainingTime = Math.max(0, maxTime - elapsedTime);
+            const progressPercentage = (remainingTime / maxTime) * 100;
+            
+            document.getElementById('timer-progress').style.width = `${progressPercentage}%`;
+
+            if (remainingTime <= 0) {
+                clearInterval(timerInterval);
+                endGame(false);
+            }
+        }
+
+        function checkGuess() {
+            clickSound.play();
+            const guess = parseInt(guessInput.value);
+            attempts++;
+
+            if (isNaN(guess) || guess < 1 || guess > 100) {
+                resultElement.textContent = '1から100までの数字を入力してください。';
+                wrongSound.play();
+            } else if (guess === targetNumber) {
+                correctSound.play();
+                endGame(true);
+            } else {
+                wrongSound.play();
+                if (guess < targetNumber) {
+                    resultElement.textContent = 'もっと大きい数字です。';
+                } else {
+                    resultElement.textContent = 'もっと小さい数字です。';
+                }
+            }
+
+            guessInput.value = '';
+            guessInput.focus();
+        }
+
+        function endGame(isWin) {
+            clearInterval(timerInterval);
+            const endTime = new Date();
+            const timeTaken = (endTime - startTime) / 1000;
+            gameScreen.classList.add('hidden');
+            startScreen.classList.remove('hidden');
+
+            gameBGM.pause();
+            gameBGM.currentTime = 0;
+            isBGMPlaying = false;
+            bgmControl.textContent = '♫';
+
+            if (isWin) {
+                const score = calculateScore(timeTaken, attempts);
+                resultElement.textContent = `正解です！${attempts}回で当てました。`;
+                scoreElement.textContent = `スコア: ${score.toLocaleString()}点 (時間: ${timeTaken.toFixed(2)}秒)`;
+                createConfetti();
+                clearBGM.play();
+            } else {
+                resultElement.textContent = '時間切れです。ゲームオーバー。';
+                scoreElement.textContent = 'スコア: 0点';
+                resultElement.style.color = '#e74c3c';
+            }
+        }
+
+        function calculateScore(time, attempts) {
+            const baseScore = 10000;
+            const timeScore = Math.max(0, baseScore - Math.floor(time * 50));
+            const attemptScore = Math.max(0, baseScore - (attempts - 1) * 500);
+            return Math.floor((timeScore + attemptScore) / 2);
+        }
+
+        function createConfetti() {
+            const confettiCount = 100;
+            const colors = ['#f0f', '#0ff', '#ff0', '#0f0', '#00f'];
+            
+            for (let i = 0; i < confettiCount; i++) {
+                const confetti = document.createElement('div');
+                confetti.classList.add('confetti');
+                confetti.style.left = Math.random() * 100 + 'vw';
+                confetti.style.top = -10 + 'px';
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confetti.style.transform = `rotate(${Math.random() * 360}deg)`;
+                
+                document.body.appendChild(confetti);
+                
+                animateConfetti(confetti);
+            }
+        }
+
+        function animateConfetti(confetti) {
+            const animationDuration = Math.random() * 3 + 2; // 2-5秒
+            const moveX = Math.random() * 100 - 50; // -50px から 50px
+            
+            confetti.animate([
+                { transform: 'translate(0, 0) rotate(0)', opacity: 1 },
+                { transform: `translate(${moveX}px, 100vh) rotate(720deg)`, opacity: 0 }
+            ], {
+                duration: animationDuration * 1000,
+                easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+            }).onfinish = () => {
+                confetti.remove();
+            };
+        }
+
+        guessInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                checkGuess();
+            }
+        });
+    </script>
+</body>
+</html>
